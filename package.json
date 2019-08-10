@@ -1,6 +1,7 @@
 {
   "name": "lighthouse-batch-parallel",
-  "version": "1.0.2",
+  "version": "1.0.3",
+  "preferGlobal": true,
   "main": "index.js",
   "bin": {
     "lighthouse-batch-parallel": "./lighthouse-batch-parallel.js"
@@ -10,6 +11,7 @@
   "license": "Apache-2.0",
   "devDependencies": {},
   "dependencies": {
+    "commander": "^3.0.0",
     "csv": "^5.1.1",
     "lighthouse": "^4.2.0",
     "puppeteer": "^1.13.0"

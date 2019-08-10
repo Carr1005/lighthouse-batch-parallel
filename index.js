@@ -8,9 +8,9 @@ const lighthouse = require('lighthouse');
 const csvParse = require('csv-parse/lib/sync');
 const csvStringify = require('csv-stringify/lib/sync');
 const {
-  workersNum,
-  auditsNameTitleMap,
-} = require('./assets/customConfig.js')
+  workersNum:         defaultWorkersNum,
+  auditsNameTitleMap: defaultAudits,
+} = require('./assets/defaultConfig.js')
 
 // lighthouse result return both "title"(for display) and "name", we use name as key for mapping data later
 const categoriesNameTitleMap = {
@@ -25,9 +25,6 @@ const inputColumnsHeader = ['Device', 'URL'];
 // use orderMap to record the index of each "name", lighthouse result 
 // from target urls could use this index to find correct column.
 const orderMap = {};
-Object.keys({ ...categoriesNameTitleMap, ...auditsNameTitleMap }).forEach((element, i) => {
-  orderMap[element] = i + inputColumnsHeader.length;
-});
 
 let config = {
   extends:  'lighthouse:default',
@@ -44,86 +41,101 @@ let config = {
 const outputDirName = 'output';
 const errLogDirName = 'errorLog';
 
-module.exports = function(inputFilePath) {
-  cluster.isMaster ? masterTask(inputFilePath) : workerTask();
-}
-
-const masterTask = (inputFilePath) => {
-  (async() => {
+module.exports = function({ inputFilePath, workersNum = defaultWorkersNum, customAuditsFilePath }) {
+  let auditsConfig = defaultAudits;
+  if (customAuditsFilePath) {
     try {
-      input = fs.readFileSync(inputFilePath, { encoding: 'utf8' });  
+      const customAuditsStream = fs.readFileSync(customAuditsFilePath, { encoding: 'utf8' });  
+      const audits = csvParse(customAuditsStream, {
+        skip_empty_lines: true,
+        trim:             true,
+      });
+      const customAudits = {};
+      audits.forEach(pairs => {
+        customAudits[pairs[0]] = pairs[1];
+      });
+      auditsConfig = customAudits;
     } catch (e) {
       console.log(e);
-      console.log("Make sure input file is provided in the folder.");
     }
-    const startTime = Date.now();
-    const auditTargets = csvParse(input, {
-      columns:          true,
-      skip_empty_lines: true,
-      trim:             true,
-    });
+  }
+  Object.keys({ ...categoriesNameTitleMap, ...auditsConfig }).forEach((element, i) => {
+    orderMap[element] = i + inputColumnsHeader.length;
+  });
+  cluster.isMaster ? masterTask({ inputFilePath, workersNum, auditsConfig }) : workerTask();
+}
 
-    const totalTasks = auditTargets.length;
-    createOutputDir(outputDirName);
-    createOutputDir(errLogDirName);
-    const clock = new Date();
-    const genDateTime = new Date(clock.getTime() - (clock.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
-    const writeStream = fs.createWriteStream(`./${outputDirName}/${genDateTime}.csv`);
-    const errLogWriteStream = fs.createWriteStream(`./${errLogDirName}/${genDateTime}-error-log.csv`);
 
-    const header = Object.values(auditsNameTitleMap);
-    header.unshift(...Object.values(categoriesNameTitleMap));
-    header.unshift(...inputColumnsHeader);
-    
-    const headerRow = csvStringify([header], { delimiter: ',' });
-    writeStream.write(headerRow);
 
-    const deliverTask = (worker) => {
-      console.log(`Total: ${totalTasks} || Current: ${auditTargets.length}`);
-      const newTask = auditTargets.shift();
-      console.log(`Device = ${newTask.Device} || URL = ${newTask.URL}`);
-      worker.send({ target: newTask });
-    };
+const masterTask = ({ inputFilePath, workersNum, auditsConfig }) => {
+  (async() => {
+    try {
+      inputStream = fs.readFileSync(inputFilePath, { encoding: 'utf8' });
+      const startTime = Date.now();
+      const auditTargets = csvParse(inputStream, {
+        columns:          true,
+        skip_empty_lines: true,
+        trim:             true,
+      });
 
-    cluster.on('online', (worker) => {
-      deliverTask(worker);
-    });
+      const totalTasks = auditTargets.length;
+      createOutputDir(outputDirName);
+      createOutputDir(errLogDirName);
+      const clock = new Date();
+      const genDateTime = new Date(clock.getTime() - (clock.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
+      const writeStream = fs.createWriteStream(`./${outputDirName}/${genDateTime}.csv`);
+      const errLogWriteStream = fs.createWriteStream(`./${errLogDirName}/${genDateTime}-error-log.csv`);
 
-    cluster.on('message', (worker, { csvResult, error }) => {
-      if (error) {
-        errLogWriteStream.write(error);
-      } else {
-        writeStream.write(csvResult);
-      }
+      const header = Object.values(auditsConfig);
+      header.unshift(...Object.values(categoriesNameTitleMap));
+      header.unshift(...inputColumnsHeader);
+      
+      const headerRow = csvStringify([header], { delimiter: ',' });
+      writeStream.write(headerRow);
 
-      if (auditTargets.length !== 0) {
-        deliverTask(worker);  
-      } else {
-        worker.kill();
-      }
-    });
+      cluster.on('online', (worker) => {
+        deliverTask(worker, auditTargets, totalTasks);
+      });
 
-    cluster.on('exit', (worker, code, signal) => {
-      // Restart worker to handle worker dies because of
-      // unexpected situation.
-      if (auditTargets.length !== 0) {
+      cluster.on('message', (worker, { csvResult, error }) => {
+        if (error) {
+          errLogWriteStream.write(error);
+        } else {
+          writeStream.write(csvResult);
+        }
+
+        if (auditTargets.length !== 0) {
+          deliverTask(worker, auditTargets, totalTasks);
+        } else {
+          worker.kill();
+        }
+      });
+
+      cluster.on('exit', (worker, code, signal) => {
+        // Restart worker to handle worker dies because of
+        // unexpected situation.
+        if (auditTargets.length !== 0) {
+          cluster.fork();
+        }
+
+        if (Object.keys(cluster.workers).length === 0) {
+          writeStream.end();
+          errLogWriteStream.end();
+          const elapsed = Date.now() - startTime;
+          const totalTimeInSeconds = elapsed / 1000;
+          const seconds = Math.floor(totalTimeInSeconds % 60);
+          const minutes = Math.floor(totalTimeInSeconds / 60);
+          console.log(`Total time to accomplish all tasks: ${minutes} minutes ${seconds} seconds`);
+        }
+      });
+
+      for (let i = 0; i < Math.min(workersNum, auditTargets.length); i++) {
         cluster.fork();
       }
-
-      if (Object.keys(cluster.workers).length === 0) {
-        writeStream.end();
-        errLogWriteStream.end();
-        const elapsed = Date.now() - startTime;
-        const totalTimeInSeconds = elapsed / 1000;
-        const seconds = Math.floor(totalTimeInSeconds % 60);
-        const minutes = Math.floor(totalTimeInSeconds / 60);
-        console.log(`Total time to accomplish all tasks: ${minutes} minutes ${seconds} seconds`);
-      }
-    });
-
-    for (let i = 0; i < Math.min(workersNum, auditTargets.length); i++) {
-      cluster.fork();
-    }
+    } catch (e) {
+      console.log(e);
+      // console.log("Make sure input file is provided in the folder.");
+    }    
   })();
 }
 
@@ -185,6 +197,13 @@ const workerTask = () => {
     })();
   });
 }
+
+const deliverTask = (worker, auditTargets, totalTasks) => {
+  console.log(`Total: ${totalTasks} || Current: ${auditTargets.length}`);
+  const newTask = auditTargets.shift();
+  console.log(`Device = ${newTask.Device} || URL = ${newTask.URL}`);
+  worker.send({ target: newTask });
+};
 
 const createOutputDir = (dir) => {
   try {
