@@ -1,8 +1,10 @@
 {
   "name": "lighthouse-batch-parallel",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "main": "index.js",
-  "bin": "lighthouse-batch-parallel.js",
+  "bin": {
+    "lighthouse-batch-parallel": "./lighthouse-batch-parallel.js"
+  },
   "repository": "https://github.com/Carr1005/lighthouse-batch-parallel.git",
   "author": "Carr",
   "license": "Apache-2.0",
