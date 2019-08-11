@@ -46,3 +46,62 @@ module.exports.auditsNameTitleMap = {
   'font-display':               'All text remains visible during webfont loads',
   'total-byte-weight':          'Avoids enormous network payloads',
 };
+
+module.exports.lighthouseConfig = {
+  extends: 'lighthouse:default',
+}
+
+/**
+  To make this easier to trace, showing the properties related to custome options of this tool 
+  in 'settings' and 'passes' for defaultConfig in lighthouse
+
+  node_modules/lighthouse/lighthouse-core/config/default-config.js
+  ------------------------------------------
+  ...
+
+  settings: constants.defaultSettings,
+  passes: [{
+    passName: 'defaultPass',
+    recordTrace: true,
+    useThrottling: true,
+    ...
+  },
+
+  ...
+
+  constants.defaultSettings defines in
+
+  node_modules/lighthouse/lighthouse-core/config/constants.js
+  ------------------------------------------
+  defaultSettings = {
+    output: 'json',
+    maxWaitForFcp: 15 * 1000,
+    maxWaitForLoad: 45 * 1000,
+    throttlingMethod: 'simulate',
+    throttling: throttling.mobileSlow4G,
+    auditMode: false,
+    gatherMode: false,
+    disableStorageReset: false,
+    disableDeviceEmulation: false,
+    emulatedFormFactor: 'mobile',
+    channel: 'node',
+
+    // the following settings have no defaults but we still want ensure that `key in settings`
+    // in config will work in a typechecked way
+    locale: 'en-US', // actual default determined by Config using lib/i18n
+    blockedUrlPatterns: null,
+    additionalTraceCategories: null,
+    extraHeaders: null,
+    precomputedLanternData: null,
+    onlyAudits: null,
+    onlyCategories: null,
+    skipAudits: null,
+  };
+
+  ...
+
+*/
+
+module.exports.throttlingOptions = ['simulated3G', 'applied3G', 'no'];
+  
+

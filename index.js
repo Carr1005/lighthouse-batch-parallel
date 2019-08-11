@@ -4,12 +4,15 @@ const cluster = require('cluster');
 
 const puppeteer = require('puppeteer');
 const lighthouse = require('lighthouse');
+const mobileSlow4G = require('./node_modules/lighthouse/lighthouse-core/config/constants.js').throttling.mobileSlow4G;
 
 const csvParse = require('csv-parse/lib/sync');
 const csvStringify = require('csv-stringify/lib/sync');
 const {
   workersNum:         defaultWorkersNum,
   auditsNameTitleMap: defaultAudits,
+  lighthouseConfig:   defaultLighthouseConfig,
+  throttlingOptions,
 } = require('./assets/defaultConfig.js')
 
 // lighthouse result return both "title"(for display) and "name", we use name as key for mapping data later
@@ -26,46 +29,61 @@ const inputColumnsHeader = ['Device', 'URL'];
 // from target urls could use this index to find correct column.
 const orderMap = {};
 
-let config = {
-  extends:  'lighthouse:default',
-  settings: {
-    throttlingMethod: 'simulate',
-  },
-  passes: [
-    {
-      useThrottling: true,
-    }
-  ]
-};
-
 const outputDirName = 'output';
 const errLogDirName = 'errorLog';
 
-module.exports = function({ inputFilePath, workersNum = defaultWorkersNum, customAuditsFilePath }) {
-  let auditsConfig = defaultAudits;
-  if (customAuditsFilePath) {
-    try {
-      const customAuditsStream = fs.readFileSync(customAuditsFilePath, { encoding: 'utf8' });  
-      const audits = csvParse(customAuditsStream, {
-        skip_empty_lines: true,
-        trim:             true,
-      });
-      const customAudits = {};
-      audits.forEach(pairs => {
-        customAudits[pairs[0]] = pairs[1];
-      });
-      auditsConfig = customAudits;
-    } catch (e) {
-      console.log(e);
-    }
-  }
+module.exports = function({
+  inputFilePath,
+  workersNum = defaultWorkersNum,
+  customAuditsFilePath,
+  throttling = throttlingOptions[0],
+}) {
+  const auditsConfig = !!customAuditsFilePath ? handleAuditsConfig(customAuditsFilePath) : defaultAudits;
+  let lighthouseConfig = handeLighthouseConfig(defaultLighthouseConfig, throttling);
+
   Object.keys({ ...categoriesNameTitleMap, ...auditsConfig }).forEach((element, i) => {
     orderMap[element] = i + inputColumnsHeader.length;
   });
-  cluster.isMaster ? masterTask({ inputFilePath, workersNum, auditsConfig }) : workerTask();
+
+  cluster.isMaster ? masterTask({ inputFilePath, workersNum, auditsConfig }) : workerTask(lighthouseConfig);
 }
 
+const handeLighthouseConfig = (defaultLighthouseConfig, throttling) => {
+  let lighthouseConfig = { ...defaultLighthouseConfig };
+  switch (throttling) {
+    case 'simulated3G':
+      break;
+    case 'applied3G':
+      lighthouseConfig['settings'] = {
+        throttlingMethod: 'devtools',
+        throttling:       mobileSlow4G,
+      };
+      break;
+    case 'no':
+      lighthouseConfig['passes'] = [{ 
+        useThrottling: false,
+      }]
+      break;
+  }
+  return lighthouseConfig;
+}
 
+const handleAuditsConfig = (customAuditsFilePath) => {
+  try {
+    const customAuditsStream = fs.readFileSync(customAuditsFilePath, { encoding: 'utf8' });  
+    const audits = csvParse(customAuditsStream, {
+      skip_empty_lines: true,
+      trim:             true,
+    });
+    const customAudits = {};
+    audits.forEach(pairs => {
+      customAudits[pairs[0]] = pairs[1];
+    });
+    return customAudits;
+  } catch (e) {
+    console.log(e);
+  }
+}
 
 const masterTask = ({ inputFilePath, workersNum, auditsConfig }) => {
   (async() => {
@@ -134,12 +152,11 @@ const masterTask = ({ inputFilePath, workersNum, auditsConfig }) => {
       }
     } catch (e) {
       console.log(e);
-      // console.log("Make sure input file is provided in the folder.");
     }    
   })();
 }
 
-const workerTask = () => {
+const workerTask = (lighthouseConfig) => {
   process.on('message', ({ target }) => {
     (async() => {
       let browser;
@@ -162,8 +179,8 @@ const workerTask = () => {
         });
 
         const lighthousePort = new URL(browser.wsEndpoint()).port;
-        config.settings.emulatedFormFactor = target.Device;
-        const { lhr } = await lighthouse(target.URL, { port: lighthousePort }, config);
+        lighthouseConfig.emulatedFormFactor = target.Device;
+        const { lhr } = await lighthouse(target.URL, { port: lighthousePort }, lighthouseConfig);
         const csv = generateReportCSV(lhr);
         const csvParseResult = csvParse(csv, {
           columns:          true,

@@ -7,7 +7,9 @@ Now this tool only supports input and output file in `csv` format.
 
 # Install
 
-`npm i lighthouse-batch-parallel -g` 
+`npm i lighthouse-batch-parallel -g`
+
+(please must install this cli-tool with `-g` flag, or you need to make the symlink by yourself)
 
 # Usage
 
@@ -18,7 +20,7 @@ The format of csv input file should follow the example below:
 **your-input.csv**
 
 ```
-Device,URL
+Device, URL
 desktop, https://www.example.com/
 mobile, https://www.example.com/
 ```
@@ -27,11 +29,38 @@ The report will be put into `output` folder which would be generated automatical
 
 ## Custom Configuration
 
-* Have more or less worker work parallely by giving option `-n` or `--number`:
+```
+-n <number> ||  --number <number>         { Number of workers }
+
+-a <path>   ||  --audits-config <path>    { Custom audits config }
+
+-t <method> ||  --throttling <method>     { Throttling Method }
+```
+
+
+* Have more or less worker work parallely by giving option `-n` or `--number` (default 4):
   
 ```
 lighthouse-batch-parallel -n 9 input.csv
 ```
+
+
+
+* Throttling option `-t` or `--throttling`:
+
+```
+lighthouse-batch-parallel -t applied3G input.csv
+```
+
+Allowed properties:
+```
+'simulated3G' (default)
+'applied3G'
+'no'
+```
+The properties above align to the options provided in Chrome Devtools. To understand the difference and details, please visit the [doc](https://github.com/GoogleChrome/lighthouse/blob/master/docs/throttling.md).
+
+
 
 * Decide which audits shoud be showed in report by giving your own config by `-a` or `--audits-config`:
 
