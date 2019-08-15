@@ -38,9 +38,12 @@ The report will be put into `output` folder which would be generated automatical
 ```
 
 
-* Have more or less worker work parallely by giving option `-n` or `--number` (default 4):
+* Have more or less worker work parallely by giving option `-n` or `--number` :
   
 ```
+lighthouse-batch-parallel input.csv  
+(default 4)
+
 lighthouse-batch-parallel -n 9 input.csv
 ```
 
