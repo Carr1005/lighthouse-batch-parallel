@@ -103,5 +103,4 @@ module.exports.lighthouseConfig = {
 */
 
 module.exports.throttlingOptions = ['simulated3G', 'applied3G', 'no'];
-  
-
+module.exports.logMode           = false;

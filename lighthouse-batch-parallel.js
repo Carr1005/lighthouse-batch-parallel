@@ -8,7 +8,8 @@ const { throttlingOptions } = require('./assets/defaultConfig.js');
 program
   .option('-n, --number <number>', 'Number of workers')
   .option('-a, --audits-config <path>', 'Custom audits config')
-  .option('-t, --throttling <method>', 'Throttling Method');
+  .option('-t, --throttling <method>', 'Throttling Method')
+  .option('-l, --log-mode', 'Log progress of process');
 
 program.parse(process.argv);
 
@@ -20,5 +21,6 @@ if (program.throttling && !throttlingOptions.includes(program.throttling)) {
     workersNum:           program.number,
     customAuditsFilePath: program.auditsConfig,
     throttling:           program.throttling,
+    logMode:              program.logMode,
   });
 }

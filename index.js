@@ -13,8 +13,14 @@ const {
   auditsNameTitleMap: defaultAudits,
   lighthouseConfig:   defaultLighthouseConfig,
   throttlingOptions,
-} = require('./assets/defaultConfig.js')
+  logMode:            defaultLogMode,  
+} = require('./assets/defaultConfig.js');
 
+const {
+  createOutputDir,
+  logger,
+  calculateElapsedTime,
+} = require('./utils.js');
 // lighthouse result return both "title"(for display) and "name", we use name as key for mapping data later
 const categoriesNameTitleMap = {
   'performance':    'Performance',
@@ -37,7 +43,8 @@ module.exports = function({
   workersNum = defaultWorkersNum,
   customAuditsFilePath,
   throttling = throttlingOptions[0],
-}) {
+  logMode    = defaultLogMode,
+} = {}) {
   const auditsConfig = !!customAuditsFilePath ? handleAuditsConfig(customAuditsFilePath) : defaultAudits;
   let lighthouseConfig = handeLighthouseConfig(defaultLighthouseConfig, throttling);
 
@@ -45,7 +52,7 @@ module.exports = function({
     orderMap[element] = i + inputColumnsHeader.length;
   });
 
-  cluster.isMaster ? masterTask({ inputFilePath, workersNum, auditsConfig }) : workerTask(lighthouseConfig);
+  cluster.isMaster ? masterTask({ inputFilePath, workersNum, auditsConfig, logMode }) : workerTask({ lighthouseConfig, logMode });
 }
 
 const handeLighthouseConfig = (defaultLighthouseConfig, throttling) => {
@@ -85,7 +92,7 @@ const handleAuditsConfig = (customAuditsFilePath) => {
   }
 }
 
-const masterTask = ({ inputFilePath, workersNum, auditsConfig }) => {
+const masterTask = ({ inputFilePath, workersNum, auditsConfig, logMode }) => {
   (async() => {
     try {
       inputStream = fs.readFileSync(inputFilePath, { encoding: 'utf8' });
@@ -112,7 +119,7 @@ const masterTask = ({ inputFilePath, workersNum, auditsConfig }) => {
       writeStream.write(headerRow);
 
       cluster.on('online', (worker) => {
-        deliverTask(worker, auditTargets, totalTasks);
+        deliverTask(worker, auditTargets, totalTasks, logMode);
       });
 
       cluster.on('message', (worker, { csvResult, error }) => {
@@ -123,7 +130,7 @@ const masterTask = ({ inputFilePath, workersNum, auditsConfig }) => {
         }
 
         if (auditTargets.length !== 0) {
-          deliverTask(worker, auditTargets, totalTasks);
+          deliverTask(worker, auditTargets, totalTasks, logMode);
         } else {
           worker.kill();
         }
@@ -139,11 +146,8 @@ const masterTask = ({ inputFilePath, workersNum, auditsConfig }) => {
         if (Object.keys(cluster.workers).length === 0) {
           writeStream.end();
           errLogWriteStream.end();
-          const elapsed = Date.now() - startTime;
-          const totalTimeInSeconds = elapsed / 1000;
-          const seconds = Math.floor(totalTimeInSeconds % 60);
-          const minutes = Math.floor(totalTimeInSeconds / 60);
-          console.log(`Total time to accomplish all tasks: ${minutes} minutes ${seconds} seconds`);
+          const { seconds, minutes } = calculateElapsedTime(startTime);
+          logger(logMode, `Total time to accomplish all tasks: ${minutes} minutes ${seconds} seconds`); 
         }
       });
 
@@ -156,7 +160,7 @@ const masterTask = ({ inputFilePath, workersNum, auditsConfig }) => {
   })();
 }
 
-const workerTask = (lighthouseConfig) => {
+const workerTask = ({ lighthouseConfig, logMode }) => {
   process.on('message', ({ target }) => {
     (async() => {
       let browser;
@@ -215,22 +219,12 @@ const workerTask = (lighthouseConfig) => {
   });
 }
 
-const deliverTask = (worker, auditTargets, totalTasks) => {
-  console.log(`Total: ${totalTasks} || Current: ${auditTargets.length}`);
+const deliverTask = (worker, auditTargets, totalTasks, logMode) => {
+  logger(logMode, `Total: ${totalTasks} || Current: ${auditTargets.length}`);
   const newTask = auditTargets.shift();
-  console.log(`Device = ${newTask.Device} || URL = ${newTask.URL}`);
+  logger(logMode, `Device = ${newTask.Device} || URL = ${newTask.URL}`);
   worker.send({ target: newTask });
 };
-
-const createOutputDir = (dir) => {
-  try {
-    if (!fs.existsSync(dir)){
-      fs.mkdirSync(dir)
-    }
-  } catch (err) {
-    console.error(err)
-  }
-}
 
 const normalizeResult = (value) => {
   const matchNumber = /\d+/.exec(value);
