@@ -1,0 +1,22 @@
+[
+  {
+    "Device":"desktop",
+    "URL":"https://www.npmjs.coxxxxxxxxxxxxxxxxxxxx"
+  },
+  {
+    "Device":"mobile",
+    "URL":"https://www.npmjs.com/package/react-carousel-slider"
+  },
+  {
+    "Device":"mobile",
+    "URL":"https://www.npmjs.com/package/lighthouse-batch-parallel"
+  },
+  {
+    "Device":"desktop",
+    "URL":"https://www.npmjs.com/package/lighthouse-batch-parallel"
+  },
+  {
+    "Device":"mobile",
+    "URL":"https://www.npmjs.com/package/react"
+  }
+]
