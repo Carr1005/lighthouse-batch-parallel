@@ -1,10 +1,5 @@
 const fs = require('fs');
-const { URL } = require('url');
 const cluster = require('cluster');
-
-const puppeteer = require('puppeteer');
-const lighthouse = require('lighthouse');
-const mobileSlow4G = require('./node_modules/lighthouse/lighthouse-core/config/constants.js').throttling.mobileSlow4G;
 
 const csvParse = require('csv-parse/lib/sync');
 const csvStringify = require('csv-stringify/lib/sync');
@@ -13,9 +8,19 @@ const {
   auditsNameTitleMap: defaultAudits,
   lighthouseConfig:   defaultLighthouseConfig,
   throttlingOptions,
-} = require('./assets/defaultConfig.js')
+  supportedInputFileTypes,
+  supportedOutputStreamTypes,
+} = require('./assets/defaultConfig.js');
 
-// lighthouse result return both "title"(for display) and "name", we use name as key for mapping data later
+const mobileSlow4G = require('./node_modules/lighthouse/lighthouse-core/config/constants.js').throttling.mobileSlow4G;
+
+const EventEmitter = require('events');
+class lighthouseBatchParallelEventEmitter extends EventEmitter {}
+const lighthouseBatchParallelEvent = new lighthouseBatchParallelEventEmitter();
+
+/**
+  lighthouse result return both "title"(for display) and "name", we use name as key for mapping data later
+*/
 const categoriesNameTitleMap = {
   'performance':    'Performance',
   'accessibility':  'Accessibility',
@@ -25,27 +30,35 @@ const categoriesNameTitleMap = {
 };
 
 const inputColumnsHeader = ['Device', 'URL'];
-// use orderMap to record the index of each "name", lighthouse result 
-// from target urls could use this index to find correct column.
+module.exports.inputColumnsHeader = inputColumnsHeader;
+
+/**
+  use orderMap to record the index of each "name", lighthouse result 
+  from target urls could use this index to find correct column.
+*/
 const orderMap = {};
 
-const outputDirName = 'output';
-const errLogDirName = 'errorLog';
-
-module.exports = function({
-  inputFilePath,
-  workersNum = defaultWorkersNum,
-  customAuditsFilePath,
-  throttling = throttlingOptions[0],
-}) {
-  const auditsConfig = !!customAuditsFilePath ? handleAuditsConfig(customAuditsFilePath) : defaultAudits;
+module.exports.lighthouseBatchParallel = ({
+  customAudits,
+  input        = {},
+  workersNum   = defaultWorkersNum,
+  throttling   = throttlingOptions[0],
+  outputFormat = supportedOutputStreamTypes[0],
+} = {}) => {
+  const auditsConfig = customAudits ? inputNormalizer(customAudits, 'auditsConfig') : defaultAudits;
   let lighthouseConfig = handeLighthouseConfig(defaultLighthouseConfig, throttling);
 
   Object.keys({ ...categoriesNameTitleMap, ...auditsConfig }).forEach((element, i) => {
     orderMap[element] = i + inputColumnsHeader.length;
   });
 
-  cluster.isMaster ? masterTask({ inputFilePath, workersNum, auditsConfig }) : workerTask(lighthouseConfig);
+  cluster.setupMaster({ 
+    exec: __dirname + '/worker.js',
+  });
+  if (cluster.isMaster) {
+    masterTask({ input, outputFormat, workersNum, auditsConfig, lighthouseConfig })
+  }
+  return lighthouseBatchParallelEvent;
 }
 
 const handeLighthouseConfig = (defaultLighthouseConfig, throttling) => {
@@ -64,198 +77,163 @@ const handeLighthouseConfig = (defaultLighthouseConfig, throttling) => {
         useThrottling: false,
       }]
       break;
+    default:
+      console.log('Unrecognized throttling method');
   }
   return lighthouseConfig;
 }
 
-const handleAuditsConfig = (customAuditsFilePath) => {
+const masterTask = ({ input, outputFormat, workersNum, auditsConfig, lighthouseConfig }) => {
   try {
-    const customAuditsStream = fs.readFileSync(customAuditsFilePath, { encoding: 'utf8' });  
-    const audits = csvParse(customAuditsStream, {
-      skip_empty_lines: true,
-      trim:             true,
+    const auditTargets = inputNormalizer(input);
+    if (auditTargets.length === 0) {
+      console.log('Please make sure the input is correct');
+      return;
+    }
+    const totalTasksNum = auditTargets.length;
+    let leftTasksNum = totalTasksNum;
+
+    const reportHeader = Object.values(auditsConfig);
+    reportHeader.unshift(...Object.values(categoriesNameTitleMap));
+    reportHeader.unshift(...inputColumnsHeader);
+    
+    cluster.on('online', (worker) => {
+      if (outputFormat === supportedOutputStreamTypes[0] && auditTargets.length === totalTasksNum) {
+        const headerRow = csvStringify([reportHeader], { delimiter: ',' });
+        lighthouseBatchParallelEvent.emit('data', { 
+          data:     headerRow,
+          progress: {
+            leftTasksNum,
+            totalTasksNum,
+          },
+          header: true,
+        });
+      }
+      deliverTask({ worker, outputFormat, auditTargets, reportHeader, lighthouseConfig });
     });
-    const customAudits = {};
-    audits.forEach(pairs => {
-      customAudits[pairs[0]] = pairs[1];
+
+    cluster.on('message', (worker, { data, error, target }) => {
+      leftTasksNum = leftTasksNum - 1;
+      if (error) {
+        lighthouseBatchParallelEvent.emit('error', { error });
+      }
+
+      lighthouseBatchParallelEvent.emit('data', {
+        data,
+        progress: {
+          device: target[`${inputColumnsHeader[0]}`],
+          url:    target[`${inputColumnsHeader[1]}`],
+          leftTasksNum,
+          totalTasksNum,
+        },
+        header: false,
+      });
+
+      /**
+        reuse worker if there are still tasks.
+      */
+      if (auditTargets.length !== 0) {
+        deliverTask({ worker, outputFormat, auditTargets, reportHeader, lighthouseConfig });
+      } else {
+        worker.kill();
+      }
     });
-    return customAudits;
+
+    cluster.on('exit', () => {
+      /**
+        1.re-create worker if worker dies because of unexpected error instead of 
+          being killed by worker.kill().
+        2.'online' listener will handle the new worker then.
+      */
+      if (auditTargets.length !== 0) {
+        cluster.fork();
+      }
+      if (Object.keys(cluster.workers).length === 0) {
+        lighthouseBatchParallelEvent.emit('end');
+      }
+    });
+
+    for (let i = 0; i < Math.min(workersNum, auditTargets.length); i++) {
+      cluster.fork();
+    }
   } catch (e) {
     console.log(e);
   }
 }
 
-const masterTask = ({ inputFilePath, workersNum, auditsConfig }) => {
-  (async() => {
-    try {
-      inputStream = fs.readFileSync(inputFilePath, { encoding: 'utf8' });
-      const startTime = Date.now();
-      const auditTargets = csvParse(inputStream, {
-        columns:          true,
-        skip_empty_lines: true,
-        trim:             true,
-      });
-
-      const totalTasks = auditTargets.length;
-      createOutputDir(outputDirName);
-      createOutputDir(errLogDirName);
-      const clock = new Date();
-      const genDateTime = new Date(clock.getTime() - (clock.getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
-      const writeStream = fs.createWriteStream(`./${outputDirName}/${genDateTime}.csv`);
-      const errLogWriteStream = fs.createWriteStream(`./${errLogDirName}/${genDateTime}-error-log.csv`);
-
-      const header = Object.values(auditsConfig);
-      header.unshift(...Object.values(categoriesNameTitleMap));
-      header.unshift(...inputColumnsHeader);
-      
-      const headerRow = csvStringify([header], { delimiter: ',' });
-      writeStream.write(headerRow);
-
-      cluster.on('online', (worker) => {
-        deliverTask(worker, auditTargets, totalTasks);
-      });
-
-      cluster.on('message', (worker, { csvResult, error }) => {
-        if (error) {
-          errLogWriteStream.write(error);
-        } else {
-          writeStream.write(csvResult);
-        }
-
-        if (auditTargets.length !== 0) {
-          deliverTask(worker, auditTargets, totalTasks);
-        } else {
-          worker.kill();
-        }
-      });
-
-      cluster.on('exit', (worker, code, signal) => {
-        // Restart worker to handle worker dies because of
-        // unexpected situation.
-        if (auditTargets.length !== 0) {
-          cluster.fork();
-        }
-
-        if (Object.keys(cluster.workers).length === 0) {
-          writeStream.end();
-          errLogWriteStream.end();
-          const elapsed = Date.now() - startTime;
-          const totalTimeInSeconds = elapsed / 1000;
-          const seconds = Math.floor(totalTimeInSeconds % 60);
-          const minutes = Math.floor(totalTimeInSeconds / 60);
-          console.log(`Total time to accomplish all tasks: ${minutes} minutes ${seconds} seconds`);
-        }
-      });
-
-      for (let i = 0; i < Math.min(workersNum, auditTargets.length); i++) {
-        cluster.fork();
-      }
-    } catch (e) {
-      console.log(e);
-    }    
-  })();
-}
-
-const workerTask = (lighthouseConfig) => {
-  process.on('message', ({ target }) => {
-    (async() => {
-      let browser;
-      const resultRow = [target[`${inputColumnsHeader[0]}`], target[`${inputColumnsHeader[1]}`]];
-      const result = {
-        csvResult: undefined,
-        error:     undefined,
-      };
-
-      try {
-        const executablePath = process.pkg ?
-          puppeteer.executablePath().replace(__dirname, './bundle') :
-          puppeteer.executablePath();
-
-        browser = await puppeteer.launch({
-          executablePath,
-          headless:        true,
-          args:            ['--no-sandbox', '--disable-setuid-sandbox'],
-          defaultViewport: null,
-        });
-
-        const lighthousePort = new URL(browser.wsEndpoint()).port;
-        lighthouseConfig.emulatedFormFactor = target.Device;
-        const { lhr } = await lighthouse(target.URL, { port: lighthousePort }, lighthouseConfig);
-        const csv = generateReportCSV(lhr);
-        const csvParseResult = csvParse(csv, {
-          columns:          true,
-          skip_empty_lines: true,
-          trim:             true,
-        });
-
-        csvParseResult.forEach(item => {
-          let position = orderMap[item.name];
-          resultRow[position] = item.displayValue;
-        });
-
-        Object.keys(lhr.categories).forEach(categoryKey => {
-          let position = orderMap[categoryKey];
-          resultRow[position] = lhr.categories[categoryKey].score;
-        });
-      } catch (e) {
-        console.log(e);
-        const errorPairs = [resultRow[0], resultRow[1]];
-        Object.entries(e).forEach(([key, value]) => {
-          errorPairs.push(key, value);
-        });
-        const errResult = csvStringify([errorPairs], { delimiter: ',' }); 
-        result.error = errResult;
-      } finally {
-        browser.close();
-        const csvResult = csvStringify([resultRow], { delimiter: ',' }); 
-        result.csvResult = csvResult;
-        process.send(result);
-      }
-    })();
-  });
-}
-
-const deliverTask = (worker, auditTargets, totalTasks) => {
-  console.log(`Total: ${totalTasks} || Current: ${auditTargets.length}`);
+const deliverTask = ({ worker, outputFormat, auditTargets, reportHeader, lighthouseConfig }) => {
   const newTask = auditTargets.shift();
-  console.log(`Device = ${newTask.Device} || URL = ${newTask.URL}`);
-  worker.send({ target: newTask });
+  worker.send({ 
+    target: newTask,
+    outputFormat,
+    reportHeader,
+    lighthouseConfig,
+    orderMap,
+  });
 };
 
-const createOutputDir = (dir) => {
-  try {
-    if (!fs.existsSync(dir)){
-      fs.mkdirSync(dir)
+const inputNormalizer = (input, usage) => {
+  if (typeof input === 'object') {
+    const { stream } = input;
+    if (typeof stream === 'string') {
+      if (usage === 'auditsConfig') {
+        return auditsConfigCsvDeserializator(stream, false);
+      } else {
+        return inputCsvDeserializator(stream, false);  
+      }
+    } else if (typeof stream === 'object') {
+      return stream;
+    } else if (stream === undefined) {
+      return [];
     }
-  } catch (err) {
-    console.error(err)
+  } else if (typeof input === 'string') {
+    const fileType = (input.match(/[^\\/]+\.[^\\/]+$/) || []).pop().split('.')[1];
+    if (supportedInputFileTypes.includes(fileType)) {
+      switch(fileType) {
+        case 'csv':
+          if (usage === 'auditsConfig') {
+            return auditsConfigCsvDeserializator(input, true);
+          } else {
+            return inputCsvDeserializator(input, true);  
+          }
+        case 'json':
+          return jsonDeserializator(input);
+        default:
+          console.log('Unsupported file type');
+      }
+    }
+  } else {
+    console.log('Input should be a string of file path or an array of objects');
   }
 }
 
-const normalizeResult = (value) => {
-  const matchNumber = /\d+/.exec(value);
-  return /^-?\d+/.test(value) ? value :
-    matchNumber ? `${value.slice(matchNumber.index)} (${value.slice(0, matchNumber.index - 1)})` : value;
+const auditsConfigCsvDeserializator = (customAudits, isFile) => {
+  try {
+    const customAuditsStream = isFile ? fs.readFileSync(customAudits, { encoding: 'utf8' }) : customAudits;
+    const audits = csvParse(customAuditsStream, {
+      skip_empty_lines: true,
+      trim:             true,
+    });
+    const customAuditsObject = {};
+    audits.forEach(pairs => {
+      customAuditsObject[pairs[0]] = pairs[1];
+    });
+    return customAuditsObject;
+  } catch (e) {
+    console.log(e);
+  }
 }
 
-// This function is copied and revised from node_modules/lighthouse/lighthouse-core/repoert/report-generator.js
-const generateReportCSV = (lhr) => {
-  // To keep things "official" we follow the CSV specification (RFC4180)
-  // The document describes how to deal with escaping commas and quotes etc.
-  const CRLF = '\r\n';
-  const separator = ',';
-  const escape = value => `"${value.replace(/"/g, '""')}"`;
-  const header = ['category', 'name', 'title', 'type', 'score', 'displayValue'];
-  const table = Object.values(lhr.categories).map(category => {
-    return category.auditRefs.map(auditRef => {
-      const audit = lhr.audits[auditRef.id];
-      // CSV validator wants all scores to be numeric, use -1 for now
-      const numericScore = audit.score === null ? -1 : audit.score;
-      return [category.title, audit.id, audit.title, audit.scoreDisplayMode, numericScore, audit.displayValue || numericScore]
-        .map(value => value.toString())
-        .map(value => normalizeResult(value))
-        .map(escape);
-    });
+const inputCsvDeserializator = (input, isFile) => {
+  const inputStream = isFile ? fs.readFileSync(input, { encoding: 'utf8' }) : input;
+  return csvParse(inputStream, {
+    columns:          true,
+    skip_empty_lines: true,
+    trim:             true,
   });
-  return [header].concat(...table).map(row => row.join(separator)).join(CRLF);
+}
+
+const jsonDeserializator = (input) => {
+  const inputStream = fs.readFileSync(input, { encoding: 'utf8' });
+  return JSON.parse(inputStream);
 }

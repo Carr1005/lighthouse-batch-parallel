@@ -102,6 +102,7 @@ module.exports.lighthouseConfig = {
 
 */
 
-module.exports.throttlingOptions = ['simulated3G', 'applied3G', 'no'];
-  
-
+module.exports.throttlingOptions          = ['simulated3G', 'applied3G', 'no'];
+module.exports.supportedInputFileTypes    = ['csv', 'json'];
+module.exports.supportedOutputStreamTypes = ['csv', 'json', 'jsObject'];
+module.exports.supportedOutputFileTypes   = ['csv', 'json'];
