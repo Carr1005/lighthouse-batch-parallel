@@ -7,7 +7,7 @@ You can require this module in your own project, get the report data stream in C
 
 ## Usage
 
-npm:
+[npm](https://www.npmjs.com/package/lighthouse-batch-parallel):
 
 `$ npm i lighthouse-batch-parallel`
 
@@ -343,7 +343,7 @@ lighthouseAuditing.on('data', ({ data, progress, header }) => {...})
         * `device` `<string>`
         * `url` `<string>`
         * `totalTasksNum` `<number>`
-        * `leftTasksNum` `number`
+        * `leftTasksNum` `<number>`
     * `header` `<boolean>`
 
 When [`outputFormat`](#outputFormat-optional) is in `csv` mode, the first `data` comes out would be the titles header, in that case, the `header` would be `true`, also `device` and `url` in `progress` would be `undefined`.
