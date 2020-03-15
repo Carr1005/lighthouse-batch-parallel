@@ -2,6 +2,8 @@
 
 > :warning: **Running Lighthouse concurrently is not recommended** according to this [reply from Lighthouse team](https://github.com/GoogleChrome/lighthouse/issues/7104#issuecomment-458368476). Be careful when you want to give [workersNum](#workersNum-optional) argument.
 
+> :warning: **Running Lighthouse concurrently would skew [Performamce Score](https://developers.google.com/web/tools/lighthouse/v3/scoring#perf)** according to this [reply from Lighthouse team](https://github.com/GoogleChrome/lighthouse/issues/7104#issuecomment-458368476), be careful of giving [workersNum](#workersNum-optional) argument when the accuracy of performance score is important.
+
 <br>
 
 This is a module to help collect multiple websites' performance data under [Lighthouse](https://github.com/GoogleChrome/lighthouse) monitoring.
