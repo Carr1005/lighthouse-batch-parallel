@@ -1,9 +1,14 @@
 # lighthouse-batch-parallel
+
+> :warning: **Running Lighthouse concurrently is not recommended** according to this [reply from Lighthouse team](https://github.com/GoogleChrome/lighthouse/issues/7104#issuecomment-458368476). Be careful when you want to give [workersNum](#workersNum-optional) argument.
+
+<br>
+
 This is a module to help collect multiple websites' performance data under [Lighthouse](https://github.com/GoogleChrome/lighthouse) monitoring.
 
-The highlight capability of this tool is monitoring multiple websites in parallel, it can accelerate the collecting process when the target URLs are in plenty. You can decide how many workers working at the same time, every worker would launch an independent headless Chrome browser.
-
 You can require this module in your own project, get the report data stream in CSV, JS Object or JSON format and handle the stream by yourself, or you can just use the [cli-tool](#cli-tool) which is also provided to generate the report file.
+
+It has the capability to monitor multiple websites in parallel which can accelerate the collecting process when the target URLs are in plenty, but please be aware of the [warning](#lighthouse-batch-parallel). You can decide how many workers working at the same time, every worker would launch an independent headless Chrome browser.
 
 ## Usage
 
