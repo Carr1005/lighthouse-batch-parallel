@@ -1,6 +1,6 @@
 {
   "name": "lighthouse-batch-parallel",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "preferGlobal": true,
   "main": "index.js",
   "bin": {
