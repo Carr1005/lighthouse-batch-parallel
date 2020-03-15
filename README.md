@@ -1,14 +1,14 @@
 # lighthouse-batch-parallel
 
-> :warning: **Running Lighthouse concurrently is not recommended** according to this [reply from Lighthouse team](https://github.com/GoogleChrome/lighthouse/issues/7104#issuecomment-458368476)
+> :warning: **Running Lighthouse concurrently would skew [Performamce Score](https://developers.google.com/web/tools/lighthouse/v3/scoring#perf)** according to this [reply from Lighthouse team](https://github.com/GoogleChrome/lighthouse/issues/7104#issuecomment-458368476), be careful of giving [workersNum](#workersNum-optional) argument when the accuracy of performance score is important.
 
 <br>
 
 This is a module to help collect multiple websites' performance data under [Lighthouse](https://github.com/GoogleChrome/lighthouse) monitoring.
 
-The highlight capability of this tool is monitoring multiple websites in parallel, it can accelerate the collecting process when the target URLs are in plenty. You can decide how many workers working at the same time, every worker would launch an independent headless Chrome browser.
-
 You can require this module in your own project, get the report data stream in CSV, JS Object or JSON format and handle the stream by yourself, or you can just use the [cli-tool](#cli-tool) which is also provided to generate the report file.
+
+It has the capability to monitor multiple websites in parallel which can accelerate the collecting process when the target URLs are in plenty, but please be aware of the [warning](#lighthouse-batch-parallel). You can decide how many workers working at the same time, every worker would launch an independent headless Chrome browser.
 
 ## Usage
 
@@ -324,7 +324,7 @@ desktop,https://www.npmjs.com/package/lighthouse-batch-parallel,0.42,0.78,1,1,0.
 ```
 
 #### `workersNum [optional]`
-Decide how many workers would work in parallel, if this argument is not given, the default number is 4, in this case if the amount of targets is less than 4, the number would be the amount of the tasks.
+Decide how many workers would work in parallel, if this argument is not given, the default number is 1, please be aware of the [warning](#lighthouse-batch-parallel).
 
 ---
 
@@ -445,7 +445,7 @@ If this option is not given, the default would be `csv`.
 * Have more or less worker work parallely by giving option `-n` or `--number` :
 ```
 $ lighthouse-batch-parallel input.csv  
-(default 4)
+(default 1)
 
 $ lighthouse-batch-parallel -n 9 input.csv
 ```

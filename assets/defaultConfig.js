@@ -6,7 +6,7 @@
   brwoser, so be careful on memory/cpu usage on your device.
 */
 
-module.exports.workersNum = 4;
+module.exports.workersNum = 1;
 
 /**
   This map defines what audits would be recorded in the report,
