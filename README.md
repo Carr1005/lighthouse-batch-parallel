@@ -55,7 +55,7 @@ const lighthouseAuditing = lighthouseBatchParallel({
 let reports = [];
 
 lighthouseAuditing.on('data', ({ data }) => {
-  body.push(data);
+  reports.push(data);
 });
 
 lighthouseAuditing.on('error', ({ error }) => {
