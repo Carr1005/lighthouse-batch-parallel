@@ -4,7 +4,7 @@
 
 <br>
 
-This is a module to help collect multiple websites' performance data under [Lighthouse](https://github.com/GoogleChrome/lighthouse) monitoring.
+This is a module to help collecting website's [Lighthouse](https://github.com/GoogleChrome/lighthouse) audit data in batches.
 
 You can require this module in your own project, get the report data stream in CSV, JS Object or JSON format and handle the stream by yourself, or you can just use the [cli-tool](#cli-tool) which is also provided to generate the report file.
 
