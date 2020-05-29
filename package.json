@@ -22,5 +22,11 @@
     "csv": "^5.1.1",
     "lighthouse": "^4.2.0",
     "puppeteer": "^1.13.0"
-  }
+  },
+  "keywords": [
+    "lighthouse",
+    "lighthouse batch",
+    "lighthouse multiple",
+    "lighthouse parallel"
+  ]
 }
