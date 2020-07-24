@@ -78,8 +78,11 @@ process.on('message', ({
         resultObject.error = jsObjectErrorResultGenerator({ resultRow, reportHeader, error: e });
       }
     } finally {
-      browser.disconnect();
-      browser.close();
+      if (browser) {
+        browser.disconnect();
+        browser.close();
+      }
+
       if (outputFormat === supportedOutputStreamTypes[0]) {
         resultObject.data = csvStringify([resultRow], { delimiter: ',' });
       } else if (outputFormat === supportedOutputStreamTypes[1]) {
