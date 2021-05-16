@@ -93,7 +93,7 @@ writeStream.on('open', () => {
 
   const lighthouseAuditing = lighthouseBatchParallel({
     input:        program.args[0],
-    customAuduts: program.auditsConfig,
+    customAudits: program.auditsConfig,
     throttling:   program.throttling,
     outputFormat: outputFileFormat,
     workersNum:   program.number,
