@@ -20,7 +20,7 @@
   "dependencies": {
     "commander": "^3.0.0",
     "csv": "^5.1.1",
-    "lighthouse": "^7.4.0",
+    "lighthouse": "^7.5.0",
     "puppeteer": "^1.13.0"
   },
   "keywords": [
